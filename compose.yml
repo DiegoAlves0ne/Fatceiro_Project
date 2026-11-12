@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: financeiro
+      POSTGRES_USER: financeiro
+      POSTGRES_PASSWORD: financeiro
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - financeiro-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U financeiro -d financeiro"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  financeiro:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/financeiro
+      DB_USER: financeiro
+      DB_PASSWORD: financeiro
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  financeiro-data:
