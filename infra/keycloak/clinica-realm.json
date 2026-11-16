@@ -1,0 +1,210 @@
+{
+  "realm": "clinica",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "client": {
+      "financeiro-api": [
+        {
+          "name": "financeiro-admin"
+        },
+        {
+          "name": "financeiro-leitura"
+        },
+        {
+          "name": "financeiro-operacao"
+        },
+        {
+          "name": "integracao-estoque"
+        },
+        {
+          "name": "integracao-atendimento"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "financeiro-api",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true
+    },
+    {
+      "clientId": "estoque-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${ESTOQUE_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "financeiro-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "financeiro-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "financeiro-client-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "financeiro-api",
+            "claim.name": "resource_access.financeiro-api.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "atendimento-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${ATENDIMENTO_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "financeiro-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "financeiro-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "financeiro-client-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "financeiro-api",
+            "claim.name": "resource_access.financeiro-api.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "financeiro-dev",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${FINANCEIRO_DEV_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "financeiro-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "financeiro-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "financeiro-client-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "financeiro-api",
+            "claim.name": "resource_access.financeiro-api.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-estoque-service",
+      "enabled": true,
+      "serviceAccountClientId": "estoque-service",
+      "clientRoles": {
+        "financeiro-api": [
+          "integracao-estoque"
+        ]
+      }
+    },
+    {
+      "username": "service-account-atendimento-service",
+      "enabled": true,
+      "serviceAccountClientId": "atendimento-service",
+      "clientRoles": {
+        "financeiro-api": [
+          "integracao-atendimento"
+        ]
+      }
+    },
+    {
+      "username": "service-account-financeiro-dev",
+      "enabled": true,
+      "serviceAccountClientId": "financeiro-dev",
+      "clientRoles": {
+        "financeiro-api": [
+          "financeiro-operacao"
+        ]
+      }
+    }
+  ],
+  "clientScopeMappings": {
+    "financeiro-api": [
+      {
+        "client": "estoque-service",
+        "roles": [
+          "integracao-estoque"
+        ]
+      },
+      {
+        "client": "atendimento-service",
+        "roles": [
+          "integracao-atendimento"
+        ]
+      },
+      {
+        "client": "financeiro-dev",
+        "roles": [
+          "financeiro-operacao"
+        ]
+      }
+    ]
+  }
+}

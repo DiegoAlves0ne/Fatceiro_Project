@@ -2,6 +2,24 @@
 
 Retrato do código em `src/main/java/br/com/clinica/financeiro`, em 12/11/2026. As visões abaixo separam entidades, dependências e DTOs para facilitar a leitura. Construtores, anotações e métodos herdados do Spring foram omitidos.
 
+## Segurança da API
+
+Antes dos controladores, `SecurityConfig` configura uma `SecurityFilterChain` sem sessão, com autenticação OAuth2 Resource Server. O Keycloak emite os JWTs; o Spring Security verifica assinatura, validade, emissor e audiência. `KeycloakAuthoritiesConverter` converte somente as roles do cliente `financeiro-api` em permissões da API.
+
+```mermaid
+flowchart LR
+    Cliente[Usuário ou microsserviço] -->|Solicita access token| Keycloak
+    Cliente -->|Bearer JWT| Filtro[SecurityFilterChain]
+    Keycloak -->|Chaves públicas JWKS| Filtro
+    Filtro --> Roles[KeycloakAuthoritiesConverter]
+    Roles -->|Permissão por rota| Controllers[Controladores REST]
+    Keycloak --> BancoAuth[(Banco exclusivo do Keycloak)]
+    Controllers --> Servicos[Serviços financeiros]
+    Servicos --> BancoFinanceiro[(Banco do financeiro)]
+```
+
+As integrações de estoque e atendimento têm roles distintas. Os perfis de leitura, operação e administração acessam dados financeiros conforme a tabela no README. A autorização atual não restringe dados por médico ou paciente.
+
 ## Entidades e enumerações
 
 As associações Titulo–Pagamento e Titulo–CustoItem representam vínculos por UUID, garantidos pelas chaves estrangeiras das migrações. Não existem coleções de pagamentos/custos em Titulo nem mapeamentos JPA `@OneToMany` ou `@ManyToOne`.

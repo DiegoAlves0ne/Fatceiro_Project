@@ -15,15 +15,71 @@ docker compose up --build
 API: `http://localhost:8080`. Saúde: `GET /actuator/health`.
 As credenciais do Compose são exclusivas para desenvolvimento local.
 
+O Compose usa PostgreSQL 18.7, com versão fixada e volume `financeiro-pg18-data` montado em `/var/lib/postgresql`, conforme o layout da imagem oficial a partir da versão 18.
+Se você já utilizava PostgreSQL 17, o volume anterior permanece preservado, mas seus dados não são transferidos automaticamente: o novo volume inicia vazio e o Flyway cria as tabelas. Para levar os dados existentes à versão 18, faça backup e restauração com `pg_dump`/`pg_restore` ou utilize `pg_upgrade` antes de retomar o uso. Não remova o volume antigo antes de validar a migração.
+
+Referências: [versões suportadas do PostgreSQL](https://www.postgresql.org/support/versioning/) e [imagem oficial no Docker](https://hub.docker.com/_/postgres).
+
 Alternativamente, com JDK 21 e Maven 3.6.3+:
 
 ```sh
-docker compose up -d postgres
+docker compose up -d postgres keycloak
 mvn verify
 mvn spring-boot:run
 ```
 
 Configuração por ambiente: `DB_URL`, `DB_USER`, `DB_PASSWORD` e `PORT`. Flyway cria o esquema; Hibernate apenas valida.
+
+## Segurança com Keycloak e Spring Security
+
+A API funciona como OAuth2 Resource Server e exige `Authorization: Bearer <access_token>` em todos os endpoints financeiros. O Spring Security valida assinatura RS256, expiração, emissor (`iss`) e destinatário (`aud`, obrigatoriamente `financeiro-api`). Somente as roles de `resource_access.financeiro-api.roles` concedem acesso; roles de outros clientes ou do realm não concedem permissões financeiras. Não há login por senha na API nem sessão por cookie.
+
+O `docker compose up --build` também inicia o Keycloak 26.8.2 em `http://localhost:8081`, com banco e volume próprios. O realm `clinica` é importado de `infra/keycloak/clinica-realm.json`. Console administrativo local: usuário `admin`, senha `admin-dev`. Esses valores e os segredos dos clientes são exclusivos para desenvolvimento; podem ser substituídos por um arquivo `.env` baseado em `.env.example`.
+
+| Role do cliente `financeiro-api` | Permissão |
+|---|---|
+| `financeiro-leitura` | Consulta títulos, pagamentos, custos e relatórios |
+| `financeiro-operacao` | Leitura, criação de títulos, pagamentos e cancelamentos |
+| `integracao-estoque` | Apenas POST de compras do estoque |
+| `integracao-atendimento` | Apenas POST de faturamentos de atendimentos |
+| `financeiro-admin` | Todas as operações existentes e `/actuator/info` |
+
+Somente GET `/actuator/health` e seus subcaminhos são públicos. Rotas não previstas ficam bloqueadas, inclusive para administradores. Ausência de token ou token inválido retorna 401; token válido sem permissão retorna 403. As roles financeiras dão acesso ao conjunto dos dados: ainda não existe autorização individual por médico, paciente ou clínica, portanto não devem ser atribuídas a um portal médico como se limitassem os dados ao médico autenticado.
+
+Clientes de integração usam `client_credentials`, com credenciais distintas e privilégio restrito:
+
+| Cliente | Segredo local padrão | Role |
+|---|---|---|
+| `estoque-service` | `estoque-dev-secret` | `integracao-estoque` |
+| `atendimento-service` | `atendimento-dev-secret` | `integracao-atendimento` |
+| `financeiro-dev` | `financeiro-dev-secret` | `financeiro-operacao` |
+
+Exemplo no PowerShell, depois que o Keycloak concluir a inicialização:
+
+```powershell
+$token = Invoke-RestMethod -Method Post `
+  -Uri 'http://localhost:8081/realms/clinica/protocol/openid-connect/token' `
+  -ContentType 'application/x-www-form-urlencoded' `
+  -Body @{ grant_type='client_credentials'; client_id='financeiro-dev'; client_secret='financeiro-dev-secret' }
+Invoke-RestMethod -Uri 'http://localhost:8080/api/v1/titulos' `
+  -Headers @{ Authorization="Bearer $($token.access_token)" }
+```
+
+Para estoque ou atendimento, troque o cliente e o segredo e use o endpoint correspondente. O cliente `financeiro-dev` serve apenas para testar operações locais; desative-o fora do desenvolvimento. Para usuários humanos, cadastre no Keycloak um cliente com Authorization Code + PKCE, seus redirects e usuários, e atribua as roles do cliente `financeiro-api`; não reutilize credenciais de serviço no navegador. O projeto ainda não inclui frontend de login.
+
+Para conectar a um Keycloak existente, configure:
+
+- `KEYCLOAK_ISSUER_URI`: URL exata do realm que aparece no `iss` do token.
+- `KEYCLOAK_JWK_SET_URI`: endereço de certificados acessível pela API.
+- `KEYCLOAK_AUDIENCE`: destinatário e cliente de roles, padrão `financeiro-api`.
+
+No Compose, o emissor é `http://localhost:8081/realms/clinica`, enquanto a API busca as chaves internamente em `http://keycloak:8080/realms/clinica/protocol/openid-connect/certs`. Fora do Docker, as duas URLs usam `localhost:8081`. Não troque o emissor pelo nome interno do container: ele deve corresponder ao token. A API pode iniciar antes do Keycloak; a primeira requisição autenticada precisa que as chaves estejam disponíveis.
+
+A importação inicial não sobrescreve um realm já existente. Alterações posteriores em roles, clientes ou segredos devem ser aplicadas pelo console/API do Keycloak; mudar `.env` não atualiza os segredos de clientes de um realm já importado. Em produção, use HTTPS, hostname real, segredos próprios e o modo `start` do Keycloak com configuração apropriada; este Compose usa `start-dev` para execução local.
+
+Os testes `SecurityConfigTest` exercitam a cadeia real do Spring Security com JWTs RSA assinados e um endpoint JWKS local, sem banco ou Keycloak externo: validam 401, 403, permissões, isolamento entre integrações, assinatura, emissor, audiência e expiração. Execute `mvn verify`.
+
+Referências: [Resource Server JWT do Spring Security](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html) e [Keycloak em Docker](https://www.keycloak.org/getting-started/getting-started-docker).
 
 ## Organização
 
@@ -176,7 +232,7 @@ Esses valores são apurados por competência, mesmo com recebimento parcial. Nã
 
 A migração V4 aplica a taxa de 30% também às consultas já registradas e reclassifica todos os EXAME anteriores como próprios da clínica, removendo o médico desses títulos. Itens e pagamentos são preservados. Um reenvio de exame anterior deve seguir o contrato novo, sem médico. Títulos sem categoria continuam fora dos relatórios. O índice de unicidade passa a abranger atendimentos de consultas e exames próprios.
 
-Cada serviço deve possuir seu banco; pacienteId e atendimentoId são referências externas, sem chaves estrangeiras para bancos de outros serviços. Outros serviços podem consumir esta API HTTP. Autenticação e autorização devem ser definidas com a plataforma antes da exposição externa; esta base local ainda não as implementa.
+Cada serviço deve possuir seu banco; pacienteId e atendimentoId são referências externas, sem chaves estrangeiras para bancos de outros serviços. Outros serviços podem consumir esta API HTTP com tokens do Keycloak e as roles de integração descritas acima. O Keycloak também possui banco próprio, separado do financeiro.
 
 Uma próxima etapa pode receber eventos de atendimento concluído para gerar cobranças. Antes de adicionar um broker, definir contratos versionados, deduplicação por evento e outbox transacional. Mensageria e publicação de eventos ainda não estão implementadas.
 

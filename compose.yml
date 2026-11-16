@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17
+    image: postgres:18.7
     environment:
       POSTGRES_DB: financeiro
       POSTGRES_USER: financeiro
@@ -8,12 +8,46 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - financeiro-data:/var/lib/postgresql/data
+      - financeiro-pg18-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U financeiro -d financeiro"]
       interval: 5s
       timeout: 3s
       retries: 15
+  keycloak-db:
+    image: postgres:18.7
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak-dev}
+    volumes:
+      - keycloak-pg18-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak-dev}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin-dev}
+      KC_HOSTNAME: http://localhost:8081
+      ESTOQUE_CLIENT_SECRET: ${ESTOQUE_CLIENT_SECRET:-estoque-dev-secret}
+      ATENDIMENTO_CLIENT_SECRET: ${ATENDIMENTO_CLIENT_SECRET:-atendimento-dev-secret}
+      FINANCEIRO_DEV_CLIENT_SECRET: ${FINANCEIRO_DEV_CLIENT_SECRET:-financeiro-dev-secret}
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ./infra/keycloak/clinica-realm.json:/opt/keycloak/data/import/clinica-realm.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
   financeiro:
     build: .
     ports:
@@ -22,8 +56,14 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/financeiro
       DB_USER: financeiro
       DB_PASSWORD: financeiro
+      KEYCLOAK_ISSUER_URI: http://localhost:8081/realms/clinica
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/clinica/protocol/openid-connect/certs
+      KEYCLOAK_AUDIENCE: financeiro-api
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 volumes:
-  financeiro-data:
+  financeiro-pg18-data:
+  keycloak-pg18-data:
